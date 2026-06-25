@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>冰块番茄钟</title>
+<style>
+  :root{
+    --ice-light:#eaf6fb;
+    --ice-mid:#bfe6f2;
+    --ice-deep:#7fc4dd;
+    --water:#3aa0c9;
+    --water-deep:#1c6e92;
+    --ink:#1f3540;
+    --paper:#f6fbfd;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0;
+    min-height:100vh;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    background:var(--paper);
+    font-family:"PingFang SC","Microsoft YaHei",sans-serif;
+    color:var(--ink);
+  }
+  .card{
+    width:360px;
+    padding:32px 28px 28px;
+    text-align:center;
+  }
+  /* 返回小镇的小链接,放在卡片左上角上方 */
+  .back-link{
+    display:inline-block;
+    font-size:13px;
+    color:#6b7a70;
+    text-decoration:none;
+    margin-bottom:16px;
+  }
+  .back-link:hover{ text-decoration:underline; }
+
+  .water-stock{
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    gap:6px;
+    font-size:14px;
+    color:var(--water-deep);
+    margin-bottom:18px;
+  }
+  .water-stock b{font-size:18px;}
+
+  .stage-wrap{
+    position:relative;
+    width:220px;
+    height:220px;
+    margin:0 auto 24px;
+  }
+  svg{display:block;width:100%;height:100%;}
+
+  .timer{
+    font-size:46px;
+    font-weight:600;
+    letter-spacing:1px;
+    margin-bottom:6px;
+    font-variant-numeric:tabular-nums;
+  }
+  .label{
+    font-size:13px;
+    color:#5b7480;
+    margin-bottom:18px;
+  }
+
+  /* 自定义时长输入区:还没开始计时之前可以改 */
+  .duration-row{
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    gap:8px;
+    margin-bottom:18px;
+    font-size:13px;
+  }
+  .duration-row input{
+    width:60px;
+    padding:6px 8px;
+    border:1px solid var(--ice-deep);
+    border-radius:8px;
+    font-size:14px;
+    text-align:center;
+  }
+  .duration-row input:disabled{
+    background:#f0f0f0;
+    color:#999;
+  }
+
+  .controls{
+    display:flex;
+    gap:10px;
+    justify-content:center;
+    margin-bottom:18px;
+  }
+  button{
+    border:1px solid var(--ice-deep);
+    background:white;
+    color:var(--water-deep);
+    padding:9px 18px;
+    border-radius:20px;
+    font-size:14px;
+    cursor:pointer;
+    transition:background .15s,transform .1s;
+  }
+  button:hover{background:var(--ice-light);}
+  button:active{transform:scale(.96);}
+  button.primary{
+    background:var(--water);
+    color:white;
+    border-color:var(--water);
+  }
+  button.primary:hover{background:var(--water-deep);}
+  button:disabled{opacity:.4;cursor:default;}
+
+  .drop{
+    position:absolute;
+    width:8px;
+    height:11px;
+    background:var(--water);
+    border-radius:50% 50% 50% 0;
+    transform:rotate(45deg);
+    opacity:0;
+    pointer-events:none;
+  }
+  @keyframes fall{
+    0%{opacity:.9; transform:translateY(0) rotate(45deg);}
+    100%{opacity:0; transform:translateY(60px) rotate(45deg);}
+  }
+  .reward{
+    font-size:13px;
+    color:var(--water-deep);
+    min-height:18px;
+  }
+</style>
+</head>
+<body>
+
+<div class="card">
+
+  <!-- 回到小镇主页 -->
+  <a class="back-link" href="index.html">← 回到小镇</a>
+
+  <!-- 水量显示,跟主页共用 water-store.js 里的同一份数据 -->
+  <div class="water-stock">
+    💧 当前水量 <b id="waterCount">0</b> 滴
+  </div>
+
+  <div class="stage-wrap" id="stageWrap">
+    <svg viewBox="0 0 220 220">
+      <defs>
+        <!-- clipPath 用来"裁切"冰块,随时间裁掉的部分越来越多,看起来就像融化了 -->
+        <clipPath id="iceClip">
+          <rect id="iceClipRect" x="50" y="60" width="120" height="120" rx="10"/>
+        </clipPath>
+      </defs>
+      <rect x="48" y="58" width="124" height="124" rx="12" fill="none" stroke="#a9c9d3" stroke-width="2"/>
+      <rect id="waterLevel" x="50" y="180" width="120" height="0" fill="var(--water)" opacity="0.55"/>
+      <g clip-path="url(#iceClip)">
+        <rect x="50" y="60" width="120" height="120" fill="var(--ice-mid)"/>
+        <rect x="58" y="68" width="40" height="28" rx="6" fill="var(--ice-light)" opacity="0.7"/>
+        <rect x="100" y="110" width="50" height="20" rx="6" fill="var(--ice-deep)" opacity="0.4"/>
+      </g>
+      <rect id="iceOutline" x="50" y="60" width="120" height="120" rx="10" fill="none" stroke="var(--ice-deep)" stroke-width="2"/>
+    </svg>
+  </div>
+
+  <div class="timer" id="timerDisplay">25:00</div>
+  <div class="label" id="statusLabel">专注时长,等待冰块融化</div>
+
+  <!-- 自定义时长:输入数字(分钟),没开始计时之前都能改 -->
+  <div class="duration-row">
+    <span>自定义时长</span>
+    <input type="number" id="durationInput" value="25" min="1" max="180">
+    <span>分钟</span>
+  </div>
+
+  <div class="controls">
+    <button class="primary" id="startBtn">开始融化</button>
+    <button id="pauseBtn" disabled>暂停</button>
+    <button id="resetBtn">重置</button>
+  </div>
+
+  <div class="reward" id="rewardMsg"></div>
+</div>
+
+<!-- 先引入公共的水量模块,后面的代码才能用 getWater() / addWater() -->
+<script src="water-store.js"></script>
+<script>
+/*
+  ice-pomodoro.html 的计时逻辑
+  ------------------------------------------
+  state 这个对象保存"现在计时器是什么状态":
+  - totalSeconds: 这一轮总共要倒计时多少秒(由自定义时长决定)
+  - remaining: 还剩多少秒
+  - running: 是否正在计时
+  - timerId: setInterval 返回的句柄,用来暂停/清除计时器
+
+  每完成 1 分钟专注,奖励多少滴水,在这里改这个数字就行
+*/
+const WATER_PER_MINUTE = 2;
+
+const state = {
+  totalSeconds: 25 * 60,
+  remaining: 25 * 60,
+  timerId: null,
+  running: false
+};
+
+// 把页面上需要操作的元素都收集到一个对象里,方便后面引用
+const el = {
+  waterCount: document.getElementById('waterCount'),
+  timerDisplay: document.getElementById('timerDisplay'),
+  statusLabel: document.getElementById('statusLabel'),
+  durationInput: document.getElementById('durationInput'),
+  startBtn: document.getElementById('startBtn'),
+  pauseBtn: document.getElementById('pauseBtn'),
+  resetBtn: document.getElementById('resetBtn'),
+  rewardMsg: document.getElementById('rewardMsg'),
+  iceClipRect: document.getElementById('iceClipRect'),
+  waterLevel: document.getElementById('waterLevel'),
+  stageWrap: document.getElementById('stageWrap')
+};
+
+// 把秒数格式化成 "25:00" 这种显示格式
+function formatTime(s){
+  const m = Math.floor(s/60).toString().padStart(2,'0');
+  const sec = (s%60).toString().padStart(2,'0');
+  return `${m}:${sec}`;
+}
+
+// 根据"已经过去的比例",更新冰块裁切区域和水位高度
+// 这样冰块会跟着倒计时同步"变小",水位跟着"变高"
+function renderIceProgress(){
+  const progress = 1 - state.remaining/state.totalSeconds; // 0 -> 1
+  const fullHeight = 120;
+  const newHeight = fullHeight * (1 - progress);
+  const newY = 60 + (fullHeight - newHeight);
+  el.iceClipRect.setAttribute('y', newY);
+  el.iceClipRect.setAttribute('height', Math.max(newHeight, 0));
+
+  const waterHeight = fullHeight * progress * 0.5; // 水位涨幅比冰块缩幅小一点,模拟体积差
+  el.waterLevel.setAttribute('y', 180 - waterHeight);
+  el.waterLevel.setAttribute('height', waterHeight);
+}
+
+// 每一秒被调用一次
+function tick(){
+  if(state.remaining <= 0){
+    completePomodoro();
+    return;
+  }
+  state.remaining -= 1;
+  el.timerDisplay.textContent = formatTime(state.remaining);
+  renderIceProgress();
+}
+
+function startTimer(){
+  if(state.running) return;
+
+  // 第一次点开始时,把自定义时长输入框里的值,作为这一轮的总时长
+  if(state.remaining === state.totalSeconds){
+    const minutes = Math.max(1, Math.min(180, Number(el.durationInput.value) || 25));
+    state.totalSeconds = minutes * 60;
+    state.remaining = state.totalSeconds;
+    el.timerDisplay.textContent = formatTime(state.remaining);
+  }
+
+  state.running = true;
+  el.startBtn.textContent = '继续融化';
+  el.startBtn.disabled = true;
+  el.pauseBtn.disabled = false;
+  el.durationInput.disabled = true; // 开始计时后不能再改时长,防止中途乱改
+  el.statusLabel.textContent = '专注中,冰块正在融化…';
+  state.timerId = setInterval(tick, 1000);
+}
+
+function pauseTimer(){
+  state.running = false;
+  clearInterval(state.timerId);
+  el.startBtn.disabled = false;
+  el.pauseBtn.disabled = true;
+  el.statusLabel.textContent = '已暂停';
+}
+
+function resetTimer(){
+  pauseTimer();
+  // 重置时,用输入框当前的数字重新算一遍总时长
+  const minutes = Math.max(1, Math.min(180, Number(el.durationInput.value) || 25));
+  state.totalSeconds = minutes * 60;
+  state.remaining = state.totalSeconds;
+
+  el.timerDisplay.textContent = formatTime(state.remaining);
+  el.statusLabel.textContent = '专注时长,等待冰块融化';
+  el.startBtn.textContent = '开始融化';
+  el.durationInput.disabled = false;
+  el.rewardMsg.textContent = '';
+  renderIceProgress();
+}
+
+// 在冰块周围"掉水滴"的小动画,纯视觉效果
+function spawnDrops(count){
+  for(let i=0;i<count;i++){
+    const d = document.createElement('div');
+    d.className = 'drop';
+    d.style.left = (90 + Math.random()*40) + 'px';
+    d.style.top = '150px';
+    d.style.animation = `fall ${0.6 + Math.random()*0.4}s ease-in forwards`;
+    d.style.animationDelay = (i*0.08)+'s';
+    el.stageWrap.appendChild(d);
+    setTimeout(()=>d.remove(), 1200);
+  }
+}
+
+// 倒计时归零时调用:结算这一轮该获得多少水,并存进 water-store.js
+function completePomodoro(){
+  pauseTimer();
+  const minutes = Math.round(state.totalSeconds/60);
+  const earned = minutes * WATER_PER_MINUTE;
+
+  // addWater 是 water-store.js 里定义的函数,负责把新的水量写进 localStorage
+  addWater(earned);
+  renderWaterTo('waterCount');
+
+  el.statusLabel.textContent = '冰块已完全融化';
+  el.rewardMsg.textContent = `本次专注 ${minutes} 分钟,获得 ${earned} 滴水`;
+  el.startBtn.textContent = '再来一轮';
+  spawnDrops(8);
+}
+
+// 给按钮绑定点击事件
+el.startBtn.addEventListener('click', startTimer);
+el.pauseBtn.addEventListener('click', pauseTimer);
+el.resetBtn.addEventListener('click', resetTimer);
+
+// 页面刚打开时,先显示一次当前水量,再画一次初始的冰块状态
+renderWaterTo('waterCount');
+renderIceProgress();
+</script>
+</body>
+</html>
