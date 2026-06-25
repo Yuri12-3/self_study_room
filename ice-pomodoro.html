@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>冰块自习钟</title>
+<style>
+  :root{
+    --ice-light:#eaf6fb;
+    --ice-mid:#bfe6f2;
+    --ice-deep:#7fc4dd;
+    --water:#3aa0c9;
+    --water-deep:#921c1c;
+    --ink:#1f3540;
+    --paper:#fdfaf6;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0;
+    min-height:100vh;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    background:var(--paper);
+    font-family:"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+    color:var(--ink);
+  }
+  .card{
+    width:360px;
+    padding:32px 28px 28px;
+    text-align:center;
+  }
+  .water-stock{
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    gap:6px;
+    font-size:14px;
+    color:var(--water-deep);
+    margin-bottom:18px;
+    letter-spacing:.5px;
+  }
+  .water-stock b{font-size:18px;}
+  .stage-wrap{
+    position:relative;
+    width:220px;
+    height:220px;
+    margin:0 auto 24px;
+  }
+  svg{display:block;width:100%;height:100%;}
+  .timer{
+    font-size:46px;
+    font-weight:600;
+    letter-spacing:1px;
+    margin-bottom:6px;
+    font-variant-numeric:tabular-nums;
+  }
+  .label{
+    font-size:13px;
+    color:#5b7480;
+    margin-bottom:22px;
+  }
+  .controls{
+    display:flex;
+    gap:10px;
+    justify-content:center;
+    margin-bottom:18px;
+  }
+  button{
+    border:1px solid var(--ice-deep);
+    background:white;
+    color:var(--water-deep);
+    padding:9px 18px;
+    border-radius:20px;
+    font-size:14px;
+    cursor:pointer;
+    transition:background .15s,transform .1s;
+  }
+  button:hover{background:var(--ice-light);}
+  button:active{transform:scale(.96);}
+  button.primary{
+    background:var(--water);
+    color:white;
+    border-color:var(--water);
+  }
+  button.primary:hover{background:var(--water-deep);}
+  button:disabled{opacity:.4;cursor:default;}
+  .preset{
+    display:flex;
+    gap:8px;
+    justify-content:center;
+    margin-bottom:18px;
+  }
+  .preset button{
+    padding:6px 12px;
+    font-size:12px;
+  }
+  .preset button.active{
+    background:var(--water-deep);
+    color:white;
+    border-color:var(--water-deep);
+  }
+  .drop{
+    position:absolute;
+    width:8px;
+    height:11px;
+    background:var(--water);
+    border-radius:50% 50% 50% 0;
+    transform:rotate(45deg);
+    opacity:0;
+    pointer-events:none;
+  }
+  @keyframes fall{
+    0%{opacity:.9; transform:translateY(0) rotate(45deg);}
+    100%{opacity:0; transform:translateY(60px) rotate(45deg);}
+  }
+  .reward{
+    font-size:13px;
+    color:var(--water-deep);
+    min-height:18px;
+  }
+</style>
+</head>
+<body>
+
+<div class="card">
+  <div class="water-stock">
+    <span>💧 当前水量</span><b id="waterCount">0</b><span>滴</span>
+  </div>
+
+  <div class="stage-wrap" id="stageWrap">
+    <svg viewBox="0 0 220 220">
+      <defs>
+        <clipPath id="iceClip">
+          <rect id="iceClipRect" x="50" y="60" width="120" height="120" rx="10"/>
+        </clipPath>
+      </defs>
+      <!-- 杯子/容器轮廓 -->
+      <rect x="48" y="58" width="124" height="124" rx="12" fill="none" stroke="#a9c9d3" stroke-width="2"/>
+      <!-- 水位(融化产生的水,在冰块下方累积) -->
+      <rect id="waterLevel" x="50" y="180" width="120" height="0" fill="var(--water)" opacity="0.55"/>
+      <!-- 冰块本体,随进度按比例缩小(用clipPath裁切呈现融化) -->
+      <g clip-path="url(#iceClip)">
+        <rect x="50" y="60" width="120" height="120" fill="var(--ice-mid)"/>
+        <rect x="58" y="68" width="40" height="28" rx="6" fill="var(--ice-light)" opacity="0.7"/>
+        <rect x="100" y="110" width="50" height="20" rx="6" fill="var(--ice-deep)" opacity="0.4"/>
+      </g>
+      <rect id="iceOutline" x="50" y="60" width="120" height="120" rx="10" fill="none" stroke="var(--ice-deep)" stroke-width="2"/>
+    </svg>
+  </div>
+
+  <div class="timer" id="timerDisplay">25:00</div>
+  <div class="label" id="statusLabel">专注时长,等待冰块融化</div>
+
+  <div class="preset" id="presetGroup">
+    <button data-min="15">15 分</button>
+    <button data-min="25" class="active">25 分</button>
+    <button data-min="45">45 分</button>
+    <button data-min="60">60 分</button>
+  </div>
+
+  <div class="controls">
+    <button class="primary" id="startBtn">开始融化</button>
+    <button id="pauseBtn" disabled>暂停</button>
+    <button id="resetBtn">重置</button>
+  </div>
+
+  <div class="reward" id="rewardMsg"></div>
+</div>
+
+<script>
+/* ============ 状态 ============
+ * 后续接入其他自习系统时,只需要关心:
+ * 1) state.waterTotal —— 当前水滴总量(已用 localStorage 持久化)
+ * 2) onPomodoroComplete(minutes) —— 番茄钟完成后的回调,
+ *    目前在里面给 waterTotal 加分,你可以把这里换成调用你自己的接口/事件
+ * ========================== */
+
+const STORAGE_KEY = 'icePomodoro.water';
+
+const state = {
+  totalSeconds: 25 * 60,
+  remaining: 25 * 60,
+  timerId: null,
+  running: false,
+  waterTotal: Number(localStorage.getItem(STORAGE_KEY) || 0)
+};
+
+// 每完成 1 分钟专注获得多少水滴,可自行调整这个换算规则
+const WATER_PER_MINUTE = 2;
+
+const el = {
+  waterCount: document.getElementById('waterCount'),
+  timerDisplay: document.getElementById('timerDisplay'),
+  statusLabel: document.getElementById('statusLabel'),
+  startBtn: document.getElementById('startBtn'),
+  pauseBtn: document.getElementById('pauseBtn'),
+  resetBtn: document.getElementById('resetBtn'),
+  presetGroup: document.getElementById('presetGroup'),
+  rewardMsg: document.getElementById('rewardMsg'),
+  iceClipRect: document.getElementById('iceClipRect'),
+  waterLevel: document.getElementById('waterLevel'),
+  stageWrap: document.getElementById('stageWrap')
+};
+
+function renderWater(){
+  el.waterCount.textContent = state.waterTotal;
+}
+
+function formatTime(s){
+  const m = Math.floor(s/60).toString().padStart(2,'0');
+  const sec = (s%60).toString().padStart(2,'0');
+  return `${m}:${sec}`;
+}
+
+// 根据剩余比例更新冰块裁切区域和容器内水位,呈现"边融化边积水"
+function renderIceProgress(){
+  const progress = 1 - state.remaining/state.totalSeconds; // 0 -> 1
+  const fullHeight = 120;
+  const newHeight = fullHeight * (1 - progress);
+  const newY = 60 + (fullHeight - newHeight);
+  el.iceClipRect.setAttribute('y', newY);
+  el.iceClipRect.setAttribute('height', Math.max(newHeight, 0));
+
+  const waterHeight = fullHeight * progress * 0.5; // 水位涨幅小于冰块缩幅,模拟体积差
+  el.waterLevel.setAttribute('y', 180 - waterHeight);
+  el.waterLevel.setAttribute('height', waterHeight);
+}
+
+function tick(){
+  if(state.remaining <= 0){
+    completePomodoro();
+    return;
+  }
+  state.remaining -= 1;
+  el.timerDisplay.textContent = formatTime(state.remaining);
+  renderIceProgress();
+}
+
+function startTimer(){
+  if(state.running) return;
+  state.running = true;
+  el.startBtn.textContent = '继续融化';
+  el.startBtn.disabled = true;
+  el.pauseBtn.disabled = false;
+  el.statusLabel.textContent = '专注中,冰块正在融化…';
+  state.timerId = setInterval(tick, 1000);
+}
+
+function pauseTimer(){
+  state.running = false;
+  clearInterval(state.timerId);
+  el.startBtn.disabled = false;
+  el.pauseBtn.disabled = true;
+  el.statusLabel.textContent = '已暂停';
+}
+
+function resetTimer(){
+  pauseTimer();
+  state.remaining = state.totalSeconds;
+  el.timerDisplay.textContent = formatTime(state.remaining);
+  el.statusLabel.textContent = '专注时长,等待冰块融化';
+  el.startBtn.textContent = '开始融化';
+  el.rewardMsg.textContent = '';
+  renderIceProgress();
+}
+
+function spawnDrops(count){
+  for(let i=0;i<count;i++){
+    const d = document.createElement('div');
+    d.className = 'drop';
+    d.style.left = (90 + Math.random()*40) + 'px';
+    d.style.top = '150px';
+    d.style.animation = `fall ${0.6 + Math.random()*0.4}s ease-in forwards`;
+    d.style.animationDelay = (i*0.08)+'s';
+    el.stageWrap.appendChild(d);
+    setTimeout(()=>d.remove(), 1200);
+  }
+}
+
+// 番茄钟完成 —— 这是与其他自习内容对接的关键钩子
+function completePomodoro(){
+  pauseTimer();
+  const minutes = Math.round(state.totalSeconds/60);
+  const earned = minutes * WATER_PER_MINUTE;
+
+  onPomodoroComplete(earned, minutes);
+
+  el.statusLabel.textContent = '冰块已完全融化';
+  el.rewardMsg.textContent = `本次专注 ${minutes} 分钟,获得 ${earned} 滴水`;
+  el.startBtn.textContent = '再来一轮';
+  spawnDrops(8);
+}
+
+// 后续要接入其他自习系统时,把下面这个函数的内容换成你自己的逻辑即可
+// 例如:调用接口上报、触发自定义事件、写入你自己的状态管理等
+function onPomodoroComplete(waterEarned, minutes){
+  state.waterTotal += waterEarned;
+  localStorage.setItem(STORAGE_KEY, state.waterTotal);
+  renderWater();
+
+  // 如果未来要接其他系统,可以监听这个自定义事件,而不用改这个文件
+  document.dispatchEvent(new CustomEvent('pomodoro:complete', {
+    detail: { minutes, waterEarned, waterTotal: state.waterTotal }
+  }));
+}
+
+el.startBtn.addEventListener('click', startTimer);
+el.pauseBtn.addEventListener('click', pauseTimer);
+el.resetBtn.addEventListener('click', resetTimer);
+
+el.presetGroup.addEventListener('click', (e)=>{
+  const btn = e.target.closest('button');
+  if(!btn) return;
+  [...el.presetGroup.children].forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  const minutes = Number(btn.dataset.min);
+  state.totalSeconds = minutes*60;
+  resetTimer();
+});
+
+renderWater();
+renderIceProgress();
+</script>
+</body>
+</html>
